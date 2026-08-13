@@ -1,0 +1,99 @@
+name: deploy-server
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  TARGET_OS: linux
+  TARGET_ARCH: amd64
+  IMAGE: cli-proxy-api:latest
+  IMAGE_TAR: cli-proxy-api.tar
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Refresh models catalog
+        run: bash .github/scripts/refresh-model-catalogs.sh
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Generate build metadata
+        run: |
+          echo "VERSION=${GITHUB_SHA}" >> "$GITHUB_ENV"
+          echo "COMMIT=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+          echo "BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
+
+      - name: Build image archive
+        run: |
+          set -euo pipefail
+          docker buildx build \
+            --platform "${TARGET_OS}/${TARGET_ARCH}" \
+            --build-arg VERSION="${VERSION}" \
+            --build-arg COMMIT="${COMMIT}" \
+            --build-arg BUILD_DATE="${BUILD_DATE}" \
+            --output type=docker,dest="${IMAGE_TAR}" \
+            --tag "${IMAGE}" \
+            .
+
+      - name: Upload image archive
+        uses: appleboy/scp-action@v1.0.0
+        with:
+          host: ${{ secrets.REMOTE_HOST }}
+          username: root
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+          port: 22
+          source: cli-proxy-api.tar
+          target: /usr/local/src/cli-proxy-api
+
+      - name: Deploy and restart container
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.REMOTE_HOST }}
+          username: root
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+          port: 22
+          script: |
+            set -euo pipefail
+
+            IMAGE="cli-proxy-api:latest"
+            CONTAINER="cli-proxy-api"
+            APP_DIR="/usr/local/src/cli-proxy-api"
+            TAR_PATH="${APP_DIR}/cli-proxy-api.tar"
+            BACKUP_DIR="${APP_DIR}/archive"
+            BACKUP_TAR="${BACKUP_DIR}/cli-proxy-api.tar.$(date +%Y%m%d_%H%M%S)"
+            LOG_DIR="${APP_DIR}/log"
+
+            mkdir -p "${LOG_DIR}"
+            mkdir -p "${BACKUP_DIR}"
+
+            if [ ! -s "${TAR_PATH}" ]; then
+              echo "image archive not found: ${TAR_PATH}"
+              exit 1
+            fi
+
+            docker load -i "${TAR_PATH}"
+            cp "${TAR_PATH}" "${BACKUP_TAR}"
+            ls -1t "${BACKUP_DIR}"/cli-proxy-api.tar.* 2>/dev/null | sed -n '4,$p' | xargs -r rm -f
+
+            docker rm -f "${CONTAINER}" || true
+            docker run -d \
+              --network host \
+              --restart=always \
+              -v /etc/hosts:/etc/hosts \
+              -v "${LOG_DIR}":/CLIProxyAPI/logs \
+              -e APP_ENV=docker \
+              --name "${CONTAINER}" \
+              "${IMAGE}"
