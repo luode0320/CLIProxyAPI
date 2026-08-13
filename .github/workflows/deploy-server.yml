@@ -75,9 +75,11 @@ jobs:
             BACKUP_DIR="${APP_DIR}/archive"
             BACKUP_TAR="${BACKUP_DIR}/cli-proxy-api.tar.$(date +%Y%m%d_%H%M%S)"
             LOG_DIR="${APP_DIR}/log"
+            CONFIG_DIR="${APP_DIR}/config"
 
             mkdir -p "${LOG_DIR}"
             mkdir -p "${BACKUP_DIR}"
+            mkdir -p "${CONFIG_DIR}"
 
             if [ ! -s "${TAR_PATH}" ]; then
               echo "image archive not found: ${TAR_PATH}"
@@ -88,11 +90,25 @@ jobs:
             cp "${TAR_PATH}" "${BACKUP_TAR}"
             ls -1t "${BACKUP_DIR}"/cli-proxy-api.tar.* 2>/dev/null | sed -n '4,$p' | xargs -r rm -f
 
+            # The image does not ship a runtime config.yaml. Bootstrap one from
+            # the bundled example on first deploy, then keep the mounted copy.
+            # Replace the example API keys before relying on the proxy endpoints.
+            if [ ! -f "${CONFIG_DIR}/config.yaml" ]; then
+              echo "No config.yaml found; bootstrapping from config.example.yaml"
+              echo "WARNING: example API keys will enable safe mode; edit ${CONFIG_DIR}/config.yaml before use"
+              docker run --rm \
+                -v "${CONFIG_DIR}":/config \
+                --entrypoint cp \
+                "${IMAGE}" \
+                /CLIProxyAPI/config.example.yaml /config/config.yaml
+            fi
+
             docker rm -f "${CONTAINER}" || true
             docker run -d \
               --network host \
               --restart=always \
               -v /etc/hosts:/etc/hosts \
+              -v "${CONFIG_DIR}/config.yaml":/CLIProxyAPI/config.yaml \
               -v "${LOG_DIR}":/CLIProxyAPI/logs \
               -e APP_ENV=docker \
               --name "${CONTAINER}" \
