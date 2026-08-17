@@ -306,6 +306,7 @@ A local Rust LLM proxy with an optional UI, inspired by CLIProxyAPI. It routes c
 ## 改动日志
 
 2026-08-17 23:59:15 feat: [插件商店] 插件商店请求缓存与限流退避
+2026-08-17 23:59:50 test: [插件商店] 插件商店缓存与退避行为测试
 
 ## License
 

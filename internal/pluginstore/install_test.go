@@ -315,25 +315,28 @@ func TestInstallUsesLatestReleaseVersion(t *testing.T) {
 	archiveData := makeZip(t, map[string]string{"sample-provider.dylib": "library-data"})
 	archiveName := "sample-provider_0.2.0_darwin_arm64.zip"
 	checksum := sha256.Sum256(archiveData)
-	client := Client{HTTPClient: mapHTTPDoer{
-		"https://api.github.com/repos/author-name/cliproxy-sample-provider-plugin/releases/latest": []byte(`{
-			"tag_name": "v0.2.0",
-			"assets": [
-				{
-					"name": "` + archiveName + `",
-					"url": "https://api.github.com/repos/author-name/cliproxy-sample-provider-plugin/releases/assets/1",
-					"browser_download_url": "https://downloads.example/` + archiveName + `"
-				},
-				{
-					"name": "checksums.txt",
-					"url": "https://api.github.com/repos/author-name/cliproxy-sample-provider-plugin/releases/assets/2",
-					"browser_download_url": "https://downloads.example/checksums.txt"
-				}
-			]
-		}`),
-		"https://downloads.example/" + archiveName: archiveData,
-		"https://downloads.example/checksums.txt":  []byte(hex.EncodeToString(checksum[:]) + "  " + archiveName + "\n"),
-	}}
+	client := Client{
+		HTTPClient: mapHTTPDoer{
+			"https://api.github.com/repos/author-name/cliproxy-sample-provider-plugin/releases/latest": []byte(`{
+				"tag_name": "v0.2.0",
+				"assets": [
+					{
+						"name": "` + archiveName + `",
+						"url": "https://api.github.com/repos/author-name/cliproxy-sample-provider-plugin/releases/assets/1",
+						"browser_download_url": "https://downloads.example/` + archiveName + `"
+					},
+					{
+						"name": "checksums.txt",
+						"url": "https://api.github.com/repos/author-name/cliproxy-sample-provider-plugin/releases/assets/2",
+						"browser_download_url": "https://downloads.example/checksums.txt"
+					}
+				]
+			}`),
+			"https://downloads.example/" + archiveName: archiveData,
+			"https://downloads.example/checksums.txt":  []byte(hex.EncodeToString(checksum[:]) + "  " + archiveName + "\n"),
+		},
+		Cache: &ClientCache{},
+	}
 
 	result, errInstall := client.Install(context.Background(), testPlugin(), InstallOptions{
 		PluginsDir: root,
@@ -678,9 +681,12 @@ func TestDownloadArtifactEnforcesDeclaredSizeDuringRead(t *testing.T) {
 func TestInstallRejectsInvalidLatestReleaseTag(t *testing.T) {
 	t.Parallel()
 
-	client := Client{HTTPClient: mapHTTPDoer{
-		"https://api.github.com/repos/author-name/cliproxy-sample-provider-plugin/releases/latest": []byte(`{"tag_name": "latest", "assets": []}`),
-	}}
+	client := Client{
+		HTTPClient: mapHTTPDoer{
+			"https://api.github.com/repos/author-name/cliproxy-sample-provider-plugin/releases/latest": []byte(`{"tag_name": "latest", "assets": []}`),
+		},
+		Cache: &ClientCache{},
+	}
 	_, errInstall := client.Install(context.Background(), testPlugin(), InstallOptions{
 		PluginsDir: t.TempDir(),
 		GOOS:       "darwin",

@@ -49,6 +49,27 @@ func TestGetBytesRejectsErrorStatus(t *testing.T) {
 	}
 }
 
+func TestGetBytesSurfacesRetryAfterOnRateLimit(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Retry-After", "60")
+		http.Error(w, "Too Many Requests", http.StatusTooManyRequests)
+	}))
+	t.Cleanup(server.Close)
+
+	_, errGet := GetBytes(context.Background(), server.Client(), server.URL, nil, 0)
+	if errGet == nil {
+		t.Fatal("GetBytes() error = nil")
+	}
+	if !strings.Contains(errGet.Error(), "unexpected status 429") {
+		t.Fatalf("GetBytes() error = %v, want status 429", errGet)
+	}
+	if !strings.Contains(errGet.Error(), "retry after 60 seconds") {
+		t.Fatalf("GetBytes() error = %v, want Retry-After hint", errGet)
+	}
+}
+
 func TestGetBytesEnforcesMaxSize(t *testing.T) {
 	t.Parallel()
 
