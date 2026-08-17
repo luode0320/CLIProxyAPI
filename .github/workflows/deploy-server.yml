@@ -76,10 +76,22 @@ jobs:
             BACKUP_TAR="${BACKUP_DIR}/cli-proxy-api.tar.$(date +%Y%m%d_%H%M%S)"
             LOG_DIR="${APP_DIR}/log"
             CONFIG_DIR="${APP_DIR}/config"
+            PLUGIN_DIR="${APP_DIR}/plugins"
+            AUTH_DIR="${APP_DIR}/auths"
+            STATIC_DIR="${APP_DIR}/static"
+            PGSTORE_DIR="${APP_DIR}/pgstore"
+            GITSTORE_DIR="${APP_DIR}/gitstore"
+            OBJECTSTORE_DIR="${APP_DIR}/objectstore"
 
             mkdir -p "${LOG_DIR}"
             mkdir -p "${BACKUP_DIR}"
             mkdir -p "${CONFIG_DIR}"
+            mkdir -p "${PLUGIN_DIR}"
+            mkdir -p "${AUTH_DIR}"
+            mkdir -p "${STATIC_DIR}"
+            mkdir -p "${PGSTORE_DIR}"
+            mkdir -p "${GITSTORE_DIR}"
+            mkdir -p "${OBJECTSTORE_DIR}"
 
             if [ ! -s "${TAR_PATH}" ]; then
               echo "image archive not found: ${TAR_PATH}"
@@ -93,6 +105,16 @@ jobs:
             # The image does not ship a runtime config.yaml. Bootstrap one from
             # the bundled example on first deploy, then keep the mounted copy.
             # Replace the example API keys before relying on the proxy endpoints.
+            #
+            # Guard: config.yaml must be a regular FILE. If a previous deploy left
+            # a DIRECTORY at this path (Docker auto-creates one when a bind-mount
+            # source file is missing), the mount would shadow the container's
+            # /CLIProxyAPI/config.yaml and break startup.
+            if [ -e "${CONFIG_DIR}/config.yaml" ] && [ ! -f "${CONFIG_DIR}/config.yaml" ]; then
+              echo "FATAL: ${CONFIG_DIR}/config.yaml exists but is NOT a regular file (likely a directory)."
+              echo "Remove it, then re-run this workflow to bootstrap from config.example.yaml."
+              exit 1
+            fi
             if [ ! -f "${CONFIG_DIR}/config.yaml" ]; then
               echo "No config.yaml found; bootstrapping from config.example.yaml"
               echo "WARNING: example API keys will enable safe mode; edit ${CONFIG_DIR}/config.yaml before use"
@@ -104,12 +126,27 @@ jobs:
             fi
 
             docker rm -f "${CONTAINER}" || true
+            # Persistent bind mounts — all survive container recreation:
+            #   config.yaml -> /CLIProxyAPI/config.yaml  (FILE, bootstrapped above)
+            #   logs        -> /CLIProxyAPI/logs
+            #   plugins     -> /CLIProxyAPI/plugins      (plugin binaries; were lost on every deploy)
+            #   auths       -> /root/.cli-proxy-api      (auth records / OAuth tokens)
+            #   static      -> /CLIProxyAPI/static       (management panel asset)
+            #   pgstore     -> /CLIProxyAPI/pgstore      (Postgres store spool; only with PGSTORE_DSN)
+            #   gitstore    -> /CLIProxyAPI/gitstore     (Git store local copy; only with GITSTORE_GIT_URL)
+            #   objectstore -> /CLIProxyAPI/objectstore  (Object store spool; only with OBJECTSTORE_ENDPOINT)
             docker run -d \
               --network host \
               --restart=always \
               -v /etc/hosts:/etc/hosts \
               -v "${CONFIG_DIR}/config.yaml":/CLIProxyAPI/config.yaml \
               -v "${LOG_DIR}":/CLIProxyAPI/logs \
+              -v "${PLUGIN_DIR}":/CLIProxyAPI/plugins \
+              -v "${AUTH_DIR}":/root/.cli-proxy-api \
+              -v "${STATIC_DIR}":/CLIProxyAPI/static \
+              -v "${PGSTORE_DIR}":/CLIProxyAPI/pgstore \
+              -v "${GITSTORE_DIR}":/CLIProxyAPI/gitstore \
+              -v "${OBJECTSTORE_DIR}":/CLIProxyAPI/objectstore \
               -e APP_ENV=docker \
               --name "${CONTAINER}" \
               "${IMAGE}"

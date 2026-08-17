@@ -69,3 +69,4 @@ docker-compose.override.yml
 
 # ai
 .zcode/*
+.workbuddy/*

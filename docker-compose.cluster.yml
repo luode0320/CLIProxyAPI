@@ -14,6 +14,10 @@ services:
       HOME_JWT: ${HOME_JWT:-}
     ports:
       - "8317:8317"
+    # Persistence mounts (cluster mode): home holds node auth data, plugins holds
+    # installed plugin binaries, logs holds runtime logs. All survive container
+    # recreation. Production: pin these to absolute paths via the CLI_PROXY_*_PATH
+    # variables (see .env.cluster.example and docs/deploy-persistence_CN.md).
     volumes:
       - ${CLI_PROXY_HOME_PATH:-./home}:/root/.cli-proxy-api
       - ${CLI_PROXY_LOG_PATH:-./logs}:/CLIProxyAPI/logs

@@ -134,6 +134,15 @@ PackyCode 为本软件用户提供了特别优惠：使用<a href="https://www.p
 
 CLIProxyAPI 用户手册： [https://help.router-for.me/](https://help.router-for.me/cn/)
 
+## Docker 部署
+
+使用 Docker Compose 部署时，`config.yaml`、`auths`、`logs`、`plugins` 等持久化数据通过 bind mount 挂载到宿主机。**重新部署（删除/重建容器）前请确认挂载正确，否则插件、认证等数据会丢失。**
+
+- 完整部署持久化指南（挂载映射、绝对路径推荐、部署前校验、备份恢复、丢数据排查）：[docs/deploy-persistence_CN.md](docs/deploy-persistence_CN.md)
+- 部署前校验：`./deploy-check.sh`（`config.yaml` 必须存在且为普通文件，防止 Docker 自动创建目录导致启动失败）
+- 备份/恢复：`./backup.sh` 备份，`./backup.sh --restore <归档>` 恢复
+- 使用 GitHub Actions（`.github/workflows/deploy-server.yml`）自动部署的持久化挂载说明见上述文档第 8 节（CI 部署不经过 compose 与 `deploy-check.sh`）
+
 ## 管理 API 文档
 
 请参见 [MANAGEMENT_API_CN.md](https://help.router-for.me/cn/management/api)

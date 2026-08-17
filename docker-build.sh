@@ -22,6 +22,8 @@ read -r -p "Enter choice [1-2]: " choice
 # --- Step 2: Execute based on choice ---
 case "$choice" in
   1)
+    echo "--- Running pre-deploy checks ---"
+    ./deploy-check.sh
     echo "--- Running with Pre-built Image ---"
     docker compose up -d --remove-orphans --no-build
     echo "Services are starting from remote image."
@@ -51,6 +53,7 @@ case "$choice" in
       --build-arg BUILD_DATE="${BUILD_DATE}"
 
     echo "Starting the services..."
+    ./deploy-check.sh
     docker compose up -d --remove-orphans --pull never
 
     echo "Build complete. Services are starting."

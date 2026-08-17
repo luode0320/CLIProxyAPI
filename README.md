@@ -299,6 +299,7 @@ This is a tool built with Tauri 2 + Vue 3 for managing multiple OpenAI Codex des
 
 2026-08-17 23:59:15 feat: [插件商店] 插件商店请求缓存与限流退避
 2026-08-17 23:59:50 test: [插件商店] 插件商店缓存与退避行为测试
+2026-08-18 01:03:29 feat: [部署持久化] 新增备份/部署校验脚本与持久化挂载
 
 ## License
 
