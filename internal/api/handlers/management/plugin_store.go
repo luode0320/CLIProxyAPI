@@ -534,14 +534,26 @@ func (h *Handler) newPluginStoreClient(proxyURL string, registryURL string, stor
 	if registryURL == "" {
 		registryURL = pluginstore.DefaultRegistryURL
 	}
+	storeClient := pluginstore.Client{
+		RegistryURL: registryURL,
+		Auth:        storeAuth,
+	}
+	if h != nil {
+		h.pluginStoreCacheOnce.Do(func() {
+			h.pluginStoreCache = &pluginstore.ClientCache{}
+		})
+		storeClient.Cache = h.pluginStoreCache
+	}
 	if httpClient != nil {
-		return pluginstore.Client{HTTPClient: httpClient, RegistryURL: registryURL, Auth: storeAuth}
+		storeClient.HTTPClient = httpClient
+		return storeClient
 	}
 	client := &http.Client{}
 	if strings.TrimSpace(proxyURL) != "" {
 		util.SetProxy(&sdkconfig.SDKConfig{ProxyURL: strings.TrimSpace(proxyURL)}, client)
 	}
-	return pluginstore.Client{HTTPClient: client, RegistryURL: registryURL, Auth: storeAuth}
+	storeClient.HTTPClient = client
+	return storeClient
 }
 
 func (h *Handler) fetchSourcedPlugins(ctx context.Context, proxyURL string, storeAuth []pluginstore.AuthConfig, sources []pluginstore.Source) ([]sourcedPlugin, []pluginStoreSourceErr) {

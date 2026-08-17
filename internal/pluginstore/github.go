@@ -8,15 +8,30 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/httpfetch"
 	log "github.com/sirupsen/logrus"
+	"golang.org/x/sync/singleflight"
 )
 
 const userAgent = "CLIProxyAPI"
 const maxPluginStoreRedirects = 10
+
+const (
+	// pluginStoreCacheTTL bounds how long a successfully fetched registry or
+	// release response is reused before the upstream is queried again.
+	pluginStoreCacheTTL = 10 * time.Minute
+	// pluginStoreFailureCacheTTL bounds how long a rate-limited or failed fetch
+	// suppresses further requests to the same URL.
+	pluginStoreFailureCacheTTL = 30 * time.Second
+	// pluginStoreBackoffMaxTTL caps the backoff honored from a Retry-After
+	// header so a misbehaving upstream cannot stall the store indefinitely.
+	pluginStoreBackoffMaxTTL = 5 * time.Minute
+)
 
 // HTTPDoer abstracts the HTTP client used to execute requests.
 type HTTPDoer = httpfetch.Doer
@@ -28,6 +43,118 @@ type Client struct {
 	Auth                  []AuthConfig
 	ResolvedAuth          []ResolvedAuthConfig
 	ResolvedAuthExpiresAt time.Time
+	// Cache, when nil, uses a shared package-level cache so all plugin store
+	// clients (management panel, installs, home sync) coalesce onto the same
+	// upstream throttle.
+	Cache *ClientCache
+}
+
+// pluginStoreCacheEntry holds a cached response body or a cached fetch error.
+type pluginStoreCacheEntry struct {
+	value     []byte
+	err       error
+	expiresAt time.Time
+}
+
+// ClientCache is a process-local, URL-keyed response cache shared by plugin
+// store clients. It is safe for concurrent use.
+type ClientCache struct {
+	mu    sync.Mutex
+	items map[string]pluginStoreCacheEntry
+	group singleflight.Group
+}
+
+// get returns the cached entry for key when it is present and not expired.
+func (c *ClientCache) get(key string) (pluginStoreCacheEntry, bool) {
+	if c == nil {
+		return pluginStoreCacheEntry{}, false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	entry, ok := c.items[key]
+	if !ok {
+		return pluginStoreCacheEntry{}, false
+	}
+	if time.Now().After(entry.expiresAt) {
+		delete(c.items, key)
+		return pluginStoreCacheEntry{}, false
+	}
+	return entry, true
+}
+
+// set stores a cached entry for key, replacing any prior entry.
+func (c *ClientCache) set(key string, entry pluginStoreCacheEntry) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.items == nil {
+		c.items = make(map[string]pluginStoreCacheEntry)
+	}
+	c.items[key] = entry
+}
+
+// globalPluginStoreCache is the default cache used by clients that do not set
+// their own, letting separate handler and sync paths share one throttle.
+var globalPluginStoreCache = &ClientCache{items: make(map[string]pluginStoreCacheEntry)}
+
+func (c *Client) cache() *ClientCache {
+	if c != nil && c.Cache != nil {
+		return c.Cache
+	}
+	return globalPluginStoreCache
+}
+
+// cacheKey scopes cached entries by URL and request kind so an authenticated
+// request never serves a response fetched by an anonymous client and vice versa.
+func (c Client) cacheKey(requestURL string, kind string) string {
+	authenticated := c.requestAuthenticated(requestURL, kind)
+	return strings.ToLower(kind) + "|" + strconv.FormatBool(authenticated) + "|" + requestURL
+}
+
+func (c Client) requestAuthenticated(requestURL string, kind string) bool {
+	if _, ok := matchingResolvedAuthConfig(c.ResolvedAuth, requestURL, kind); ok {
+		return true
+	}
+	item, ok := matchingAuthConfig(c.Auth, requestURL, kind)
+	if !ok {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(item.Type)) {
+	case "", AuthTypeNone:
+		return false
+	default:
+		return true
+	}
+}
+
+// pluginStoreCacheable reports whether a response should be cached. Large
+// artifact downloads are excluded; they are re-fetched and verified on demand.
+func pluginStoreCacheable(kind string) bool {
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case RequestKindRegistry, RequestKindMetadata:
+		return true
+	default:
+		return false
+	}
+}
+
+// retryAfterDelay interprets a Retry-After header as seconds, clamped to
+// [0, pluginStoreBackoffMaxTTL]. A missing or invalid header yields
+// pluginStoreFailureCacheTTL.
+func retryAfterDelay(retryAfter string) time.Duration {
+	value := strings.TrimSpace(retryAfter)
+	if value != "" {
+		if seconds, errParse := strconv.Atoi(value); errParse == nil && seconds >= 0 {
+			delay := time.Duration(seconds) * time.Second
+			if delay > pluginStoreBackoffMaxTTL {
+				delay = pluginStoreBackoffMaxTTL
+			}
+			return delay
+		}
+	}
+	return pluginStoreFailureCacheTTL
 }
 
 type Release struct {
@@ -144,6 +271,40 @@ func (c Client) releaseAssetAPIAuthenticated(apiURL string) bool {
 
 func (c Client) get(ctx context.Context, requestURL string, accept string, kind string, maxSize int64) ([]byte, error) {
 	currentURL := strings.TrimSpace(requestURL)
+	if currentURL == "" {
+		return nil, fmt.Errorf("plugin store url is empty")
+	}
+	cache := c.cache()
+	cacheable := pluginStoreCacheable(kind)
+	key := c.cacheKey(currentURL, kind)
+	if cacheable {
+		if entry, ok := cache.get(key); ok {
+			if entry.err != nil {
+				return nil, entry.err
+			}
+			return entry.value, nil
+		}
+	}
+	value, err, _ := cache.group.Do(key, func() (interface{}, error) {
+		if cacheable {
+			if entry, ok := cache.get(key); ok {
+				if entry.err != nil {
+					return nil, entry.err
+				}
+				return entry.value, nil
+			}
+		}
+		return c.doGet(ctx, currentURL, accept, kind, maxSize, cacheable, key)
+	})
+	if err != nil {
+		return nil, err
+	}
+	data, _ := value.([]byte)
+	return data, nil
+}
+
+func (c Client) doGet(ctx context.Context, requestURL string, accept string, kind string, maxSize int64, cacheable bool, cacheKey string) ([]byte, error) {
+	currentURL := strings.TrimSpace(requestURL)
 	for redirects := 0; ; redirects++ {
 		if errURL := validatePluginStoreRequestURL(c.Auth, currentURL, kind); errURL != nil {
 			return nil, errURL
@@ -185,7 +346,32 @@ func (c Client) get(ctx context.Context, requestURL string, accept string, kind 
 			currentURL = nextURL
 			continue
 		}
-		return readPluginStoreResponse(resp, maxSize, authenticated)
+		now := time.Now()
+		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusForbidden {
+			errStatus := pluginStoreStatusError(resp, authenticated)
+			if errClose := resp.Body.Close(); errClose != nil {
+				log.WithError(errClose).Debug("failed to close plugin store response body")
+			}
+			if cacheable {
+				delay := retryAfterDelay(resp.Header.Get("Retry-After"))
+				c.cache().set(cacheKey, pluginStoreCacheEntry{err: errStatus, expiresAt: now.Add(delay)})
+				log.WithFields(log.Fields{
+					"url":          currentURL,
+					"status":       resp.StatusCode,
+					"backoff":      delay.String(),
+					"request_kind": kind,
+				}).Warn("pluginstore: upstream rate limited, backing off")
+			}
+			return nil, errStatus
+		}
+		data, errRead := readPluginStoreResponse(resp, maxSize, authenticated)
+		if errRead != nil {
+			return nil, errRead
+		}
+		if cacheable {
+			c.cache().set(cacheKey, pluginStoreCacheEntry{value: data, expiresAt: now.Add(pluginStoreCacheTTL)})
+		}
+		return data, nil
 	}
 }
 
@@ -259,6 +445,21 @@ func pluginStoreRedirectURL(resp *http.Response, requestURL string) (string, err
 	return next.String(), nil
 }
 
+// pluginStoreStatusError builds the error reported for a non-success response.
+// When the request was authenticated the response body is not read, matching
+// the historical behavior that avoids exposing response content for requests
+// that carried credentials.
+func pluginStoreStatusError(resp *http.Response, authenticated bool) error {
+	if resp == nil {
+		return fmt.Errorf("unexpected empty response")
+	}
+	if authenticated {
+		return fmt.Errorf("unexpected status %d", resp.StatusCode)
+	}
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	return fmt.Errorf("unexpected status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+}
+
 func readPluginStoreResponse(resp *http.Response, maxSize int64, authenticated bool) ([]byte, error) {
 	defer func() {
 		if errClose := resp.Body.Close(); errClose != nil {
@@ -266,11 +467,7 @@ func readPluginStoreResponse(resp *http.Response, maxSize int64, authenticated b
 		}
 	}()
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		if authenticated {
-			return nil, fmt.Errorf("unexpected status %d", resp.StatusCode)
-		}
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return nil, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return nil, pluginStoreStatusError(resp, authenticated)
 	}
 	reader := io.Reader(resp.Body)
 	if maxSize > 0 {

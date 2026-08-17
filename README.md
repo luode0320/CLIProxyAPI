@@ -303,6 +303,10 @@ A local Rust LLM proxy with an optional UI, inspired by CLIProxyAPI. It routes c
 > [!NOTE]  
 > If you have developed a port of CLIProxyAPI or a project inspired by it, please open a PR to add it to this list.
 
+## 改动日志
+
+2026-08-17 23:59:15 feat: [插件商店] 插件商店请求缓存与限流退避
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

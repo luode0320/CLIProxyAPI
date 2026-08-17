@@ -58,6 +58,8 @@ type Handler struct {
 	configReloadHook        func(context.Context, *config.Config)
 	pluginStoreRegistryURL  string
 	pluginStoreHTTPClient   pluginstore.HTTPDoer
+	pluginStoreCacheOnce    sync.Once
+	pluginStoreCache        *pluginstore.ClientCache
 	pluginReleaseCacheMu    sync.Mutex
 	pluginReleaseCache      map[string]pluginReleaseCacheEntry
 }

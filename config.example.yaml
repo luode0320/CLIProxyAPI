@@ -94,6 +94,13 @@ plugins:
   #   - "https://example.com/cliproxy-plugins/registry.json"
   # Optional plugin store auth rules. Values are read from environment variables;
   # tokens are not written into plugin manifests or node status.
+  # To raise the GitHub API rate limit for plugin store lookups (unauthenticated
+  # requests are limited to 60/hour), add a rule for api.github.com with
+  # type: github-token:
+  #   - match: "https://api.github.com/"
+  #     apply-to: ["registry", "metadata"]
+  #     type: github-token
+  #     token-env: "GITHUB_TOKEN"
   # store-auth:
   #   - match: "https://example.com/cliproxy-plugins/"
   #     apply-to: ["registry", "artifact"]

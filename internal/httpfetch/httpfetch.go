@@ -44,7 +44,12 @@ func GetBytes(ctx context.Context, client Doer, requestURL string, headers map[s
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return nil, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		errStatus := fmt.Errorf("unexpected status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		if (resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusForbidden) &&
+			strings.TrimSpace(resp.Header.Get("Retry-After")) != "" {
+			return nil, fmt.Errorf("%w (retry after %s seconds)", errStatus, strings.TrimSpace(resp.Header.Get("Retry-After")))
+		}
+		return nil, errStatus
 	}
 
 	reader := io.Reader(resp.Body)
