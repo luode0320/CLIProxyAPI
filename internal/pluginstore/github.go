@@ -235,13 +235,42 @@ func (c Client) FetchReleaseByTag(ctx context.Context, plugin Plugin, tag string
 }
 
 // ReleaseVersion derives the plugin version from the release tag, stripping a
-// leading "v"/"V" and validating the result.
+// leading "v"/"V" and validating the result. Release tags may also carry a
+// plugin id prefix (e.g. "workbuddy-v0.8.5" or "qoderwork-v0.2.6") when a
+// repository hosts multiple independently versioned plugins; the "<plugin>-v"
+// prefix is stripped before validation.
 func ReleaseVersion(release Release) (string, error) {
 	version := normalizeVersion(release.TagName)
+	if !validPluginVersion(version) {
+		if stripped, ok := stripPluginReleasePrefix(release.TagName); ok {
+			version = stripped
+		}
+	}
 	if !validPluginVersion(version) {
 		return "", fmt.Errorf("invalid release tag %q", release.TagName)
 	}
 	return version, nil
+}
+
+// stripPluginReleasePrefix extracts the version from a release tag that
+// carries a plugin id prefix, e.g. "workbuddy-v0.8.5" -> "0.8.5". It scans
+// from the right for the last "-v"/"-V" separator whose suffix begins with a
+// digit, so plugin ids containing hyphens (e.g. "my-plugin-v1.2.3") still
+// resolve to the correct version. The result is returned without any leading
+// "v"/"V".
+func stripPluginReleasePrefix(tag string) (string, bool) {
+	tag = strings.TrimSpace(tag)
+	for index := len(tag) - 1; index >= 1; index-- {
+		if (tag[index] != 'v' && tag[index] != 'V') || tag[index-1] != '-' {
+			continue
+		}
+		candidate := tag[index+1:]
+		if candidate == "" || candidate[0] < '0' || candidate[0] > '9' {
+			continue
+		}
+		return normalizeVersion(candidate), true
+	}
+	return "", false
 }
 
 func (c Client) DownloadAsset(ctx context.Context, asset ReleaseAsset) ([]byte, error) {

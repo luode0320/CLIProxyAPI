@@ -84,6 +84,10 @@ func TestReleaseVersion(t *testing.T) {
 		{name: "whitespace", tagName: " v2.0.0 ", want: "2.0.0"},
 		{name: "empty", tagName: "", wantErr: true},
 		{name: "non numeric", tagName: "latest", wantErr: true},
+		{name: "plugin id prefix", tagName: "workbuddy-v0.8.5", want: "0.8.5"},
+		{name: "plugin id prefix uppercase V", tagName: "qoderwork-V0.2.6", want: "0.2.6"},
+		{name: "plugin id with hyphen", tagName: "my-plugin-v1.2.3", want: "1.2.3"},
+		{name: "plugin id prefix no v", tagName: "workbuddy-0.8.5", wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
