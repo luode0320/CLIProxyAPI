@@ -6,6 +6,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends build-essential
 
 COPY go.mod go.sum ./
 
+# Optional Go module proxy override (e.g. --build-arg GOPROXY=https://goproxy.cn,direct).
+# Defaults to the official proxy so CI behavior is unchanged.
+ARG GOPROXY=https://proxy.golang.org,direct
+ENV GOPROXY=${GOPROXY}
+
 RUN go mod download
 
 COPY . .
