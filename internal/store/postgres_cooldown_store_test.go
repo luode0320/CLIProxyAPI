@@ -66,7 +66,10 @@ func (c *cooldownTestConn) ExecContext(_ context.Context, query string, args []d
 	c.state.mu.Lock()
 	defer c.state.mu.Unlock()
 	c.state.queries = append(c.state.queries, query)
-	if !strings.Contains(query, "INSERT INTO") || (len(args) != 4 && len(args) != 5) {
+	// 5-arg queries are PostgreSQL deletes (observed version as arg[4]); 7-arg
+	// queries are MySQL deletes, which repeat the observed version three times
+	// (args[4..6]) for the conditional ON DUPLICATE KEY UPDATE expressions.
+	if !strings.Contains(query, "INSERT INTO") || (len(args) != 4 && len(args) != 5 && len(args) != 7) {
 		return driver.RowsAffected(1), nil
 	}
 	authID, okAuthID := args[0].Value.(string)
