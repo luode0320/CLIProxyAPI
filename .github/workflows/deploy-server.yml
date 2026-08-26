@@ -82,6 +82,7 @@ jobs:
             PGSTORE_DIR="${APP_DIR}/pgstore"
             GITSTORE_DIR="${APP_DIR}/gitstore"
             OBJECTSTORE_DIR="${APP_DIR}/objectstore"
+            MYSQLSTORE_DIR="${APP_DIR}/mysqlstore"
 
             mkdir -p "${LOG_DIR}"
             mkdir -p "${BACKUP_DIR}"
@@ -92,6 +93,7 @@ jobs:
             mkdir -p "${PGSTORE_DIR}"
             mkdir -p "${GITSTORE_DIR}"
             mkdir -p "${OBJECTSTORE_DIR}"
+            mkdir -p "${MYSQLSTORE_DIR}"
 
             if [ ! -s "${TAR_PATH}" ]; then
               echo "image archive not found: ${TAR_PATH}"
@@ -135,6 +137,7 @@ jobs:
             #   pgstore     -> /CLIProxyAPI/pgstore      (Postgres store spool; only with PGSTORE_DSN)
             #   gitstore    -> /CLIProxyAPI/gitstore     (Git store local copy; only with GITSTORE_GIT_URL)
             #   objectstore -> /CLIProxyAPI/objectstore  (Object store spool; only with OBJECTSTORE_ENDPOINT)
+            #   mysqlstore  -> /CLIProxyAPI/mysqlstore   (MySQL store spool; only with MYSQL_DSN)
             docker run -d \
               --network host \
               --restart=always \
@@ -147,6 +150,9 @@ jobs:
               -v "${PGSTORE_DIR}":/CLIProxyAPI/pgstore \
               -v "${GITSTORE_DIR}":/CLIProxyAPI/gitstore \
               -v "${OBJECTSTORE_DIR}":/CLIProxyAPI/objectstore \
+              -v "${MYSQLSTORE_DIR}":/CLIProxyAPI/mysqlstore \
               -e APP_ENV=docker \
+              -e MYSQL_DSN="root:Ld588588@tcp(127.0.0.1:33060)/cli_proxy_api?charset=utf8mb4&parseTime=true" \
+              -e MYSQL_LOCAL_PATH=/CLIProxyAPI/mysqlstore \
               --name "${CONTAINER}" \
               "${IMAGE}"

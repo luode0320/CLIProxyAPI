@@ -160,6 +160,10 @@ func main() {
 		pgStoreSchema        string
 		pgStoreLocalPath     string
 		pgStoreInst          *store.PostgresStore
+		useMySQLStore        bool
+		mysqlStoreDSN        string
+		mysqlStoreLocalPath  string
+		mysqlStoreInst       *store.MySQLStore
 		useGitStore          bool
 		gitStoreRemoteURL    string
 		gitStoreUser         string
@@ -226,6 +230,24 @@ func main() {
 				pgStoreLocalPath = wd
 			}
 		}
+		useGitStore = false
+	}
+	if value, ok := lookupEnv("MYSQL_DSN", "mysql_dsn"); ok {
+		useMySQLStore = true
+		mysqlStoreDSN = value
+	}
+	if useMySQLStore {
+		if value, ok := lookupEnv("MYSQL_LOCAL_PATH", "mysql_local_path"); ok {
+			mysqlStoreLocalPath = value
+		}
+		if mysqlStoreLocalPath == "" {
+			if writableBase != "" {
+				mysqlStoreLocalPath = writableBase
+			} else {
+				mysqlStoreLocalPath = wd
+			}
+		}
+		usePostgresStore = false
 		useGitStore = false
 	}
 	if value, ok := lookupEnv("GITSTORE_GIT_URL", "gitstore_git_url"); ok {
@@ -372,6 +394,7 @@ func main() {
 
 		// Local stores are intentionally disabled when config is loaded from home.
 		usePostgresStore = false
+		useMySQLStore = false
 		useObjectStore = false
 		useGitStore = false
 	} else if usePostgresStore {
@@ -403,6 +426,35 @@ func main() {
 		if err == nil {
 			cfg.AuthDir = pgStoreInst.AuthDir()
 			log.Infof("postgres-backed token store enabled, workspace path: %s", pgStoreInst.WorkDir())
+		}
+	} else if useMySQLStore {
+		if mysqlStoreLocalPath == "" {
+			mysqlStoreLocalPath = wd
+		}
+		mysqlStoreLocalPath = filepath.Join(mysqlStoreLocalPath, "mysqlstore")
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		mysqlStoreInst, err = store.NewMySQLStore(ctx, store.MySQLStoreConfig{
+			DSN:      mysqlStoreDSN,
+			SpoolDir: mysqlStoreLocalPath,
+		})
+		cancel()
+		if err != nil {
+			log.Errorf("failed to initialize mysql token store: %v", err)
+			return
+		}
+		examplePath := filepath.Join(wd, "config.example.yaml")
+		ctx, cancel = context.WithTimeout(context.Background(), 30*time.Second)
+		if errBootstrap := mysqlStoreInst.Bootstrap(ctx, examplePath); errBootstrap != nil {
+			cancel()
+			log.Errorf("failed to bootstrap mysql-backed config: %v", errBootstrap)
+			return
+		}
+		cancel()
+		configFilePath = mysqlStoreInst.ConfigPath()
+		cfg, err = config.LoadConfigOptional(configFilePath, isCloudDeploy)
+		if err == nil {
+			cfg.AuthDir = mysqlStoreInst.AuthDir()
+			log.Infof("mysql-backed token store enabled, workspace path: %s", mysqlStoreInst.WorkDir())
 		}
 	} else if useObjectStore {
 		if objectStoreLocalPath == "" {
@@ -602,6 +654,8 @@ func main() {
 	// Register the shared token store once so all components use the same persistence backend.
 	if usePostgresStore {
 		sdkAuth.RegisterTokenStore(pgStoreInst)
+	} else if useMySQLStore {
+		sdkAuth.RegisterTokenStore(mysqlStoreInst)
 	} else if useObjectStore {
 		sdkAuth.RegisterTokenStore(objectStoreInst)
 	} else if useGitStore {
