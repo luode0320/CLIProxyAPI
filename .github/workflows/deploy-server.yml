@@ -55,7 +55,7 @@ jobs:
           host: ${{ secrets.REMOTE_HOST }}
           username: root
           password: ${{ secrets.REGISTRY_PASSWORD }}
-          port: 22
+          port: 18998
           source: cli-proxy-api.tar
           target: /usr/local/src/cli-proxy-api
 
@@ -65,7 +65,7 @@ jobs:
           host: ${{ secrets.REMOTE_HOST }}
           username: root
           password: ${{ secrets.REGISTRY_PASSWORD }}
-          port: 22
+          port: 18998
           script: |
             set -euo pipefail
 
