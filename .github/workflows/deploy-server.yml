@@ -8,7 +8,7 @@ on:
 env:
   TARGET_OS: linux
   TARGET_ARCH: amd64
-  IMAGE: cli-proxy-api:latest
+  IMAGE: luode0320/cli-proxy-api:latest
   IMAGE_TAR: cli-proxy-api.tar
 
 jobs:
@@ -68,7 +68,7 @@ jobs:
           script: |
             set -euo pipefail
 
-            IMAGE="cli-proxy-api:latest"
+            IMAGE="luode0320/cli-proxy-api:latest"
             CONTAINER="cli-proxy-api"
             APP_DIR="/usr/local/src/cli-proxy-api"
             TAR_PATH="${APP_DIR}/cli-proxy-api.tar"
