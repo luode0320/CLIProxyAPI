@@ -302,6 +302,7 @@ This is a tool built with Tauri 2 + Vue 3 for managing multiple OpenAI Codex des
 2026-08-18 01:03:29 feat: [部署持久化] 新增备份/部署校验脚本与持久化挂载
 2026-08-26 22:13:25 feat: [MySQL 后端] 新增 MySQLStore 并接入 MYSQL_DSN 部署配置
 2026-08-26 22:14:11 test: [MySQL 后端] 新增 cooldown 单测并兼容 7-arg mock 判据
+2026-08-26 22:14:37 docs: [MySQL 后端] 归档 6-review 评审记录
 
 ## License
 
