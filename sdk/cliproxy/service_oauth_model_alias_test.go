@@ -185,3 +185,51 @@ func TestApplyOAuthModelAlias_PerAuthAlias(t *testing.T) {
 		t.Fatalf("expected per-auth display name %q, got %q", "Configured GPT Five", out[0].DisplayName)
 	}
 }
+
+func TestApplyOAuthModelAlias_CaseOnlyAliasRename(t *testing.T) {
+	cfg := &config.Config{
+		OAuthModelAlias: map[string][]config.OAuthModelAlias{
+			"traework-provider": {
+				{Name: "DeepSeek-V4-Pro", Alias: "deepseek-v4-pro"},
+			},
+		},
+	}
+	models := []*ModelInfo{
+		{ID: "DeepSeek-V4-Pro", Name: "models/DeepSeek-V4-Pro"},
+	}
+
+	out := applyOAuthModelAlias(cfg, "traework-provider", "oauth", models)
+	if len(out) != 1 {
+		t.Fatalf("expected 1 model, got %d", len(out))
+	}
+	if out[0].ID != "deepseek-v4-pro" {
+		t.Fatalf("expected case-only alias id %q, got %q", "deepseek-v4-pro", out[0].ID)
+	}
+	if out[0].Name != "models/deepseek-v4-pro" {
+		t.Fatalf("expected case-only alias name %q, got %q", "models/deepseek-v4-pro", out[0].Name)
+	}
+}
+
+func TestApplyOAuthModelAlias_CaseOnlyAliasForkKeepsBoth(t *testing.T) {
+	cfg := &config.Config{
+		OAuthModelAlias: map[string][]config.OAuthModelAlias{
+			"traework-provider": {
+				{Name: "DeepSeek-V4-Pro", Alias: "deepseek-v4-pro", Fork: true},
+			},
+		},
+	}
+	models := []*ModelInfo{
+		{ID: "DeepSeek-V4-Pro", Name: "models/DeepSeek-V4-Pro"},
+	}
+
+	out := applyOAuthModelAlias(cfg, "traework-provider", "oauth", models)
+	if len(out) != 2 {
+		t.Fatalf("expected 2 models, got %d", len(out))
+	}
+	if out[0].ID != "DeepSeek-V4-Pro" {
+		t.Fatalf("expected original id %q, got %q", "DeepSeek-V4-Pro", out[0].ID)
+	}
+	if out[1].ID != "deepseek-v4-pro" {
+		t.Fatalf("expected forked case-only alias id %q, got %q", "deepseek-v4-pro", out[1].ID)
+	}
+}

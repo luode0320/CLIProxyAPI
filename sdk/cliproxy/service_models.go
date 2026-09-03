@@ -870,7 +870,7 @@ func rewriteModelInfoName(name, oldID, newID string) string {
 	if oldID == "" || newID == "" {
 		return name
 	}
-	if strings.EqualFold(oldID, newID) {
+	if oldID == newID {
 		return name
 	}
 	if strings.EqualFold(trimmed, oldID) {
@@ -925,11 +925,10 @@ func oauthModelAliasesForAuth(cfg *config.Config, channel string, attributes map
 			if alias == "" {
 				continue
 			}
-			key := strings.ToLower(alias)
-			if _, exists := seenAlias[key]; exists {
+			if _, exists := seenAlias[alias]; exists {
 				continue
 			}
-			seenAlias[key] = struct{}{}
+			seenAlias[alias] = struct{}{}
 			out = append(out, entry)
 		}
 	}
@@ -946,21 +945,23 @@ func applyOAuthModelAliasEntries(aliases []config.OAuthModelAlias, models []*Mod
 	}
 
 	forward := make(map[string][]aliasEntry, len(aliases))
+	forwardFolded := make(map[string][]aliasEntry, len(aliases))
 	for i := range aliases {
 		name := strings.TrimSpace(aliases[i].Name)
 		alias := strings.TrimSpace(aliases[i].Alias)
 		if name == "" || alias == "" {
 			continue
 		}
-		if strings.EqualFold(name, alias) {
+		if name == alias {
 			continue
 		}
-		key := strings.ToLower(name)
-		forward[key] = append(forward[key], aliasEntry{
+		entry := aliasEntry{
 			alias:       alias,
 			displayName: strings.TrimSpace(aliases[i].DisplayName),
 			fork:        aliases[i].Fork,
-		})
+		}
+		forward[name] = append(forward[name], entry)
+		forwardFolded[strings.ToLower(name)] = append(forwardFolded[strings.ToLower(name)], entry)
 	}
 	if len(forward) == 0 {
 		return models
@@ -976,8 +977,11 @@ func applyOAuthModelAliasEntries(aliases []config.OAuthModelAlias, models []*Mod
 		if id == "" {
 			continue
 		}
-		key := strings.ToLower(id)
+		key := id
 		entries := forward[key]
+		if len(entries) == 0 {
+			entries = forwardFolded[strings.ToLower(id)]
+		}
 		if len(entries) == 0 {
 			if _, exists := seen[key]; exists {
 				continue
@@ -1007,14 +1011,13 @@ func applyOAuthModelAliasEntries(aliases []config.OAuthModelAlias, models []*Mod
 			if mappedID == "" {
 				continue
 			}
-			if strings.EqualFold(mappedID, id) {
+			if mappedID == id {
 				continue
 			}
-			aliasKey := strings.ToLower(mappedID)
-			if _, exists := seen[aliasKey]; exists {
+			if _, exists := seen[mappedID]; exists {
 				continue
 			}
-			seen[aliasKey] = struct{}{}
+			seen[mappedID] = struct{}{}
 			clone := *model
 			clone.ID = mappedID
 			if entry.displayName != "" {

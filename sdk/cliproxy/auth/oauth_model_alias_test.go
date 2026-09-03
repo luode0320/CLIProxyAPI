@@ -385,3 +385,41 @@ func TestApplyOAuthModelAliasWithResult_NoForceMappingPreservesRequestedModelInO
 		t.Fatalf("OriginalAlias = %q want requested model when force-mapping off", res.OriginalAlias)
 	}
 }
+
+func TestApplyOAuthModelAliasWithResult_CaseOnlyAliasMapsToExactUpstreamName(t *testing.T) {
+	t.Parallel()
+	mgr := NewManager(nil, nil, nil)
+	mgr.SetConfig(&internalconfig.Config{})
+	mgr.SetOAuthModelAlias(map[string][]internalconfig.OAuthModelAlias{
+		"traework-provider": {{Name: "DeepSeek-V4-Pro", Alias: "deepseek-v4-pro"}},
+	})
+	auth := &Auth{ID: "case-only-alias", Provider: "traework-provider", Attributes: map[string]string{"auth_kind": "oauth"}}
+
+	// The configured lower-cased alias resolves to the exact upstream name.
+	res := mgr.applyOAuthModelAliasWithResult(auth, "deepseek-v4-pro")
+	if res.UpstreamModel != "DeepSeek-V4-Pro" {
+		t.Fatalf("case-only alias upstream = %q, want %q", res.UpstreamModel, "DeepSeek-V4-Pro")
+	}
+	// Any other letter case of the alias still falls back to the mapping.
+	if res := mgr.applyOAuthModelAliasWithResult(auth, "DEEPSEEK-V4-PRO"); res.UpstreamModel != "DeepSeek-V4-Pro" {
+		t.Fatalf("folded case-only alias upstream = %q, want %q", res.UpstreamModel, "DeepSeek-V4-Pro")
+	}
+	// Requesting the exact upstream name passes through without mapping.
+	if res := mgr.applyOAuthModelAliasWithResult(auth, "DeepSeek-V4-Pro"); res.UpstreamModel != "DeepSeek-V4-Pro" {
+		t.Fatalf("exact upstream request should stay unchanged, got %q", res.UpstreamModel)
+	}
+}
+
+func TestResolveUpstreamModelFromAliases_CaseOnlyAlias(t *testing.T) {
+	t.Parallel()
+
+	aliases := []internalconfig.OAuthModelAlias{
+		{Name: "DeepSeek-V4-Pro", Alias: "deepseek-v4-pro"},
+	}
+	if got := resolveUpstreamModelFromAliases(aliases, "deepseek-v4-pro"); got.UpstreamModel != "DeepSeek-V4-Pro" {
+		t.Fatalf("per-auth case-only alias upstream = %q, want %q", got.UpstreamModel, "DeepSeek-V4-Pro")
+	}
+	if got := resolveUpstreamModelFromAliases(aliases, "DeepSeek-V4-Pro"); got.UpstreamModel != "" {
+		t.Fatalf("per-auth exact upstream request should not map, got %q", got.UpstreamModel)
+	}
+}

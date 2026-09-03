@@ -59,7 +59,9 @@ func (cfg *Config) SanitizeClaudeHeaderDefaults() {
 
 // SanitizeOAuthModelAlias normalizes and deduplicates global OAuth model name aliases.
 // It trims whitespace, normalizes channel keys to lower-case, drops empty entries,
-// allows multiple aliases per upstream name, and ensures aliases are unique within each channel.
+// allows multiple aliases per upstream name, and ensures aliases are unique within
+// each channel. Alias names are case-sensitive: an alias that differs from the
+// upstream name only by letter case is kept so callers can map between casings.
 func (cfg *Config) SanitizeOAuthModelAlias() {
 	if cfg == nil || len(cfg.OAuthModelAlias) == 0 {
 		return
@@ -78,14 +80,13 @@ func (cfg *Config) SanitizeOAuthModelAlias() {
 			if name == "" || alias == "" {
 				continue
 			}
-			if strings.EqualFold(name, alias) {
+			if name == alias {
 				continue
 			}
-			aliasKey := strings.ToLower(alias)
-			if _, ok := seenAlias[aliasKey]; ok {
+			if _, ok := seenAlias[alias]; ok {
 				continue
 			}
-			seenAlias[aliasKey] = struct{}{}
+			seenAlias[alias] = struct{}{}
 			clean = append(clean, OAuthModelAlias{
 				Name:         name,
 				Alias:        alias,

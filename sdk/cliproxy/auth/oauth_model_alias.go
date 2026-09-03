@@ -23,9 +23,20 @@ type oauthModelAliasEntry struct {
 	forceMapping  bool
 }
 
+type oauthModelAliasChannelTable struct {
+	// exact maps the alias exactly as configured to its entry. Case-sensitive
+	// aliases (for example alias "deepseek-v4-pro" for upstream "DeepSeek-V4-Pro")
+	// are resolved through this index.
+	exact map[string]oauthModelAliasEntry
+	// folded maps the lower-cased alias to its entry and only serves as a
+	// case-insensitive fallback when no exact match exists. The first configured
+	// alias wins when several aliases differ only by letter case.
+	folded map[string]oauthModelAliasEntry
+}
+
 type oauthModelAliasTable struct {
-	// reverse maps channel -> alias (lower) -> entry with upstream model and flags.
-	reverse map[string]map[string]oauthModelAliasEntry
+	// reverse maps channel -> alias indexes (exact + folded) with upstream model and flags.
+	reverse map[string]*oauthModelAliasChannelTable
 }
 
 // OAuthModelAliasResult contains the resolved upstream model and mapping metadata.
@@ -40,34 +51,41 @@ func compileOAuthModelAliasTable(aliases map[string][]internalconfig.OAuthModelA
 		return &oauthModelAliasTable{}
 	}
 	out := &oauthModelAliasTable{
-		reverse: make(map[string]map[string]oauthModelAliasEntry, len(aliases)),
+		reverse: make(map[string]*oauthModelAliasChannelTable, len(aliases)),
 	}
 	for rawChannel, entries := range aliases {
 		channel := strings.ToLower(strings.TrimSpace(rawChannel))
 		if channel == "" || len(entries) == 0 {
 			continue
 		}
-		rev := make(map[string]oauthModelAliasEntry, len(entries))
+		rev := &oauthModelAliasChannelTable{
+			exact:  make(map[string]oauthModelAliasEntry, len(entries)),
+			folded: make(map[string]oauthModelAliasEntry, len(entries)),
+		}
 		for _, entry := range entries {
 			name := strings.TrimSpace(entry.Name)
 			alias := strings.TrimSpace(entry.Alias)
 			if name == "" || alias == "" {
 				continue
 			}
-			if strings.EqualFold(name, alias) {
+			if name == alias {
 				continue
 			}
-			aliasKey := strings.ToLower(alias)
-			if _, exists := rev[aliasKey]; exists {
+			if _, exists := rev.exact[alias]; exists {
 				continue
 			}
-			rev[aliasKey] = oauthModelAliasEntry{
+			compiled := oauthModelAliasEntry{
 				upstreamModel: name,
 				configAlias:   alias,
 				forceMapping:  entry.ForceMapping,
 			}
+			rev.exact[alias] = compiled
+			aliasKey := strings.ToLower(alias)
+			if _, exists := rev.folded[aliasKey]; !exists {
+				rev.folded[aliasKey] = compiled
+			}
 		}
-		if len(rev) > 0 {
+		if len(rev.exact) > 0 {
 			out.reverse[channel] = rev
 		}
 	}
@@ -330,6 +348,23 @@ func sanitizeOAuthModelAliases(aliases []internalconfig.OAuthModelAlias) []inter
 	return append([]internalconfig.OAuthModelAlias(nil), clean...)
 }
 
+// findOAuthModelAliasEntry resolves the alias entry for a requested model name,
+// preferring an exact case-sensitive match and falling back to a case-insensitive
+// comparison so legacy configurations keep working.
+func findOAuthModelAliasEntry(aliases []internalconfig.OAuthModelAlias, key string) (internalconfig.OAuthModelAlias, bool) {
+	for i := range aliases {
+		if strings.TrimSpace(aliases[i].Alias) == key {
+			return aliases[i], true
+		}
+	}
+	for i := range aliases {
+		if strings.EqualFold(strings.TrimSpace(aliases[i].Alias), key) {
+			return aliases[i], true
+		}
+	}
+	return internalconfig.OAuthModelAlias{}, false
+}
+
 func resolveUpstreamModelFromAliases(aliases []internalconfig.OAuthModelAlias, requestedModel string) OAuthModelAliasResult {
 	if len(aliases) == 0 {
 		return OAuthModelAliasResult{}
@@ -347,31 +382,33 @@ func resolveUpstreamModelFromAliases(aliases []internalconfig.OAuthModelAlias, r
 		if key == "" {
 			continue
 		}
-		for _, entry := range aliases {
-			original := strings.TrimSpace(entry.Name)
-			alias := strings.TrimSpace(entry.Alias)
-			if original == "" || alias == "" || !strings.EqualFold(alias, key) {
-				continue
-			}
-			if strings.EqualFold(original, baseModel) {
-				if !entry.ForceMapping {
-					return OAuthModelAliasResult{}
-				}
-				return OAuthModelAliasResult{
-					UpstreamModel: preserveResolvedModelSuffix(original, requestResult),
-					ForceMapping:  entry.ForceMapping,
-					OriginalAlias: oauthModelAliasForceMappingResponseModel(alias),
-				}
-			}
-			originalAlias := requestedModel
-			if entry.ForceMapping {
-				originalAlias = oauthModelAliasForceMappingResponseModel(alias)
+		entry, ok := findOAuthModelAliasEntry(aliases, key)
+		if !ok {
+			continue
+		}
+		original := strings.TrimSpace(entry.Name)
+		alias := strings.TrimSpace(entry.Alias)
+		if original == "" || alias == "" {
+			continue
+		}
+		if original == baseModel {
+			if !entry.ForceMapping {
+				return OAuthModelAliasResult{}
 			}
 			return OAuthModelAliasResult{
 				UpstreamModel: preserveResolvedModelSuffix(original, requestResult),
 				ForceMapping:  entry.ForceMapping,
-				OriginalAlias: originalAlias,
+				OriginalAlias: oauthModelAliasForceMappingResponseModel(alias),
 			}
+		}
+		originalAlias := requestedModel
+		if entry.ForceMapping {
+			originalAlias = oauthModelAliasForceMappingResponseModel(alias)
+		}
+		return OAuthModelAliasResult{
+			UpstreamModel: preserveResolvedModelSuffix(original, requestResult),
+			ForceMapping:  entry.ForceMapping,
+			OriginalAlias: originalAlias,
 		}
 	}
 	return OAuthModelAliasResult{}
@@ -407,11 +444,14 @@ func resolveUpstreamModelFromAliasTable(m *Manager, auth *Auth, requestedModel, 
 	}
 
 	for _, candidate := range candidates {
-		key := strings.ToLower(strings.TrimSpace(candidate))
+		key := strings.TrimSpace(candidate)
 		if key == "" {
 			continue
 		}
-		entry, exists := rev[key]
+		entry, exists := rev.exact[key]
+		if !exists {
+			entry, exists = rev.folded[strings.ToLower(key)]
+		}
 		if !exists {
 			continue
 		}
@@ -421,7 +461,7 @@ func resolveUpstreamModelFromAliasTable(m *Manager, auth *Auth, requestedModel, 
 			continue
 		}
 
-		if strings.EqualFold(targetModel, baseModel) {
+		if targetModel == baseModel {
 			if !entry.forceMapping {
 				return OAuthModelAliasResult{}
 			}

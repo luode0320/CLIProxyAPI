@@ -54,3 +54,39 @@ func TestSanitizeOAuthModelAlias_AllowsMultipleAliasesForSameName(t *testing.T) 
 		}
 	}
 }
+
+func TestSanitizeOAuthModelAlias_SupportsCaseSensitiveAliases(t *testing.T) {
+	cfg := &Config{
+		OAuthModelAlias: map[string][]OAuthModelAlias{
+			"traework-provider": {
+				// Case-only mapping must be kept so clients can request the
+				// lower-cased alias while the upstream receives the exact name.
+				{Name: "DeepSeek-V4-Pro", Alias: "deepseek-v4-pro"},
+				// Exact name==alias stays a no-op and is dropped.
+				{Name: "gpt-5", Alias: "gpt-5"},
+				// Exact duplicate alias is dropped; case-variant duplicates are kept.
+				{Name: "model-a", Alias: "shared"},
+				{Name: "model-b", Alias: "shared"},
+				{Name: "model-c", Alias: "Shared"},
+			},
+		},
+	}
+
+	cfg.SanitizeOAuthModelAlias()
+
+	aliases := cfg.OAuthModelAlias["traework-provider"]
+	if len(aliases) != 3 {
+		t.Fatalf("expected 3 sanitized aliases, got %d: %+v", len(aliases), aliases)
+	}
+	if aliases[0].Name != "DeepSeek-V4-Pro" || aliases[0].Alias != "deepseek-v4-pro" {
+		t.Fatalf("expected case-only alias to be preserved, got name=%q alias=%q", aliases[0].Name, aliases[0].Alias)
+	}
+	// The exact duplicate alias ("model-b" -> "shared") is dropped, while the
+	// case-variant alias ("model-c" -> "Shared") is kept.
+	if aliases[1].Name != "model-a" || aliases[1].Alias != "shared" {
+		t.Fatalf("expected first shared alias from model-a, got name=%q alias=%q", aliases[1].Name, aliases[1].Alias)
+	}
+	if aliases[2].Name != "model-c" || aliases[2].Alias != "Shared" {
+		t.Fatalf("expected case-variant alias from model-c to be kept, got name=%q alias=%q", aliases[2].Name, aliases[2].Alias)
+	}
+}
