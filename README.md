@@ -307,6 +307,7 @@ This is a tool built with Tauri 2 + Vue 3 for managing multiple OpenAI Codex des
 2026-08-26 22:13:25 feat: [MySQL 后端] 新增 MySQLStore 并接入 MYSQL_DSN 部署配置
 2026-08-26 22:14:11 test: [MySQL 后端] 新增 cooldown 单测并兼容 7-arg mock 判据
 2026-08-26 22:14:37 docs: [MySQL 后端] 归档 6-review 评审记录
+2026-09-12 21:33:09 fix: [上游超时] 新增上游响应头等待上限配置并默认收紧至90秒
 
 ## License
 

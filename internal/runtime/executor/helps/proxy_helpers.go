@@ -47,18 +47,65 @@ func NewProxyAwareHTTPClient(ctx context.Context, cfg *config.Config, auth *clip
 		transport := buildProxyTransport(proxyURL)
 		if transport != nil {
 			httpClient.Transport = transport
-			return httpClient
+		} else {
+			// If proxy setup failed, log and fall through to context RoundTripper
+			log.Debugf("failed to setup proxy from URL: %s, falling back to context transport", proxyutil.Redact(proxyURL))
+			if rt, ok := ctx.Value("cliproxy.roundtripper").(http.RoundTripper); ok && rt != nil {
+				httpClient.Transport = rt
+			}
 		}
-		// If proxy setup failed, log and fall through to context RoundTripper
-		log.Debugf("failed to setup proxy from URL: %s, falling back to context transport", proxyutil.Redact(proxyURL))
-	}
-
-	// Priority 3: Use RoundTripper from context (typically from RoundTripperFor)
-	if rt, ok := ctx.Value("cliproxy.roundtripper").(http.RoundTripper); ok && rt != nil {
+	} else if rt, ok := ctx.Value("cliproxy.roundtripper").(http.RoundTripper); ok && rt != nil {
+		// Priority 3: Use RoundTripper from context (typically from RoundTripperFor)
 		httpClient.Transport = rt
 	}
 
+	applyUpstreamResponseHeaderTimeout(httpClient, cfg)
+
 	return httpClient
+}
+
+// applyUpstreamResponseHeaderTimeout bounds how long the client waits for
+// upstream response headers.
+//
+// Without this cap, a request to an upstream that accepts the TCP connection but
+// never writes a response parks the calling goroutine until the OS TCP stack
+// exhausts its retransmissions, which can take tens of minutes. Only the wait for
+// headers is bounded; streaming after the headers arrive is unaffected.
+//
+// Custom RoundTrippers (for example the uTLS transports used for browser
+// fingerprint parity) cannot carry this cap: http.Transport.ResponseHeaderTimeout
+// has no equivalent on the RoundTripper interface, so those clients keep their
+// previous behaviour.
+func applyUpstreamResponseHeaderTimeout(client *http.Client, cfg *config.Config) {
+	if client == nil {
+		return
+	}
+	seconds := cfg.UpstreamResponseHeaderTimeoutSeconds()
+	if seconds <= 0 {
+		return
+	}
+	headerTimeout := time.Duration(seconds) * time.Second
+
+	switch transport := client.Transport.(type) {
+	case nil:
+		// A nil Transport makes net/http fall back to the process-wide
+		// http.DefaultTransport. Clone it first so the cap stays local to this
+		// client instead of mutating shared global state.
+		base, ok := http.DefaultTransport.(*http.Transport)
+		if !ok {
+			log.Debugf("upstream response header timeout not applied: global default transport is %T", http.DefaultTransport)
+			return
+		}
+		cloned := base.Clone()
+		cloned.ResponseHeaderTimeout = headerTimeout
+		client.Transport = cloned
+	case *http.Transport:
+		// buildProxyTransport returns a freshly built transport per call, so
+		// setting the field here does not affect other clients.
+		transport.ResponseHeaderTimeout = headerTimeout
+	default:
+		log.Debugf("upstream response header timeout not applied: custom RoundTripper %T", transport)
+	}
 }
 
 // buildProxyTransport creates an HTTP transport configured for the given proxy URL.

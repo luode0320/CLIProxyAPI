@@ -319,6 +319,18 @@ ws-auth: true
 
 # When > 0, emit blank lines every N seconds for non-streaming responses to prevent idle timeouts.
 nonstream-keepalive-interval: 0
+
+# Cap, in seconds, on how long an upstream request waits for response headers.
+# Bounds the "connection accepted but upstream never responds" failure mode: without
+# a cap the request parks until the OS TCP stack gives up on retransmissions, which
+# can take tens of minutes. Only the header wait is bounded -- streaming after the
+# headers arrive is unaffected.
+# Set to 0 to disable the cap (restores the previous unbounded behaviour).
+# Custom transports that cannot carry the cap (such as the uTLS paths used for
+# browser fingerprint parity) are unaffected either way.
+# Default: 90
+upstream-response-header-timeout: 90
+
 # Streaming behavior (SSE keep-alives + safe bootstrap retries).
 # streaming:
 #   keepalive-seconds: 15   # Default: 0 (disabled). <= 0 disables keep-alives.

@@ -98,6 +98,18 @@ type Config struct {
 	// WebsocketAuth enables or disables authentication for the WebSocket API.
 	WebsocketAuth bool `yaml:"ws-auth" json:"ws-auth"`
 
+	// UpstreamResponseHeaderTimeout caps how long an executor waits for the
+	// upstream response headers before aborting the request, in seconds.
+	//
+	// It bounds the "connection established but upstream never responds" failure
+	// mode: without a cap the request goroutine parks until the OS TCP stack
+	// exhausts its retransmissions, which can take tens of minutes.
+	//
+	// Only the wait for headers is bounded; streaming after the headers arrive
+	// is unaffected. nil uses DefaultUpstreamResponseHeaderTimeout; 0 disables
+	// the cap and restores the previous unbounded behaviour.
+	UpstreamResponseHeaderTimeout *int `yaml:"upstream-response-header-timeout,omitempty" json:"upstream-response-header-timeout,omitempty"`
+
 	// AntigravitySignatureCacheEnabled controls whether signature cache validation is enabled for thinking blocks.
 	// When true (default), cached signatures are preferred and validated.
 	// When false, client signatures are used directly after normalization (bypass mode).
