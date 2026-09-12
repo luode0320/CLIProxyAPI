@@ -1,0 +1,11 @@
+# 统一行尾符为 LF。
+#
+# 2026-09-12：工作树曾出现 1393 个纯 CRLF 变更文件（466386 insertions /
+# 466386 deletions，git diff --ignore-all-space 比对后差异为空），系本机
+# Windows 工具批量改写行尾符所致，与业务改动无关，且会淹没真实 diff。
+#
+# 说明：text=auto 让 git 自动识别文本文件并做换行规范化；eol=lf 让 checkout
+# 到工作树时统一写出 LF。二进制文件由 auto 检测排除，不受影响。
+# 注意：本文件只约束新增与重新检出的内容；存量文件的规范化需执行
+# `git add --renormalize .` 后再提交。
+* text=auto eol=lf
