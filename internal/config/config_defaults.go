@@ -10,6 +10,7 @@ const (
 	// generous enough for slow first-token generation while still surfacing a
 	// silent upstream in well under a minute of downstream waiting.
 	DefaultUpstreamResponseHeaderTimeout = 90
+	DefaultDiscoveryServiceType          = "_ai-gateway._tcp"
 )
 
 // UpstreamResponseHeaderTimeoutSeconds resolves the effective upstream response
