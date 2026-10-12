@@ -10,6 +10,9 @@ import (
 
 // GetStaticModelDefinitions returns static model metadata for a given channel.
 // Channel is provided via path param (:channel) or query param (?channel=...).
+// When the channel has no static definition, it falls back to the models
+// currently registered in the global registry so plugin-provided providers can
+// expose their catalogs to management clients.
 func (h *Handler) GetStaticModelDefinitions(c *gin.Context) {
 	channel := strings.TrimSpace(c.Param("channel"))
 	if channel == "" {
@@ -21,6 +24,9 @@ func (h *Handler) GetStaticModelDefinitions(c *gin.Context) {
 	}
 
 	models := registry.GetStaticModelDefinitionsByChannel(channel)
+	if models == nil {
+		models = registry.GetGlobalRegistry().GetAvailableModelsByProvider(channel)
+	}
 	if models == nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "unknown channel", "channel": channel})
 		return
