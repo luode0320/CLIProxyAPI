@@ -1669,3 +1669,60 @@ func TestConvertOpenAIChatCompletionsResponseToOpenAIResponses_SingleChunkWithBo
 		t.Fatalf("unexpected completed message: got %q", got)
 	}
 }
+
+func TestConvertOpenAIChatCompletionsResponseToOpenAIResponses_PureReasoningZeroBodyLengthEmitsIncomplete(t *testing.T) {
+	request := []byte(`{"model":"deepseek-r1"}`)
+	chunks := []string{
+		`data: {"id":"chatcmpl_pure_r1","object":"chat.completion.chunk","created":1773896263,"model":"deepseek-r1","choices":[{"index":0,"delta":{"role":"assistant","content":"","reasoning_content":"Thinking deeply about the complex problem..."},"finish_reason":null}]}`,
+		`data: {"id":"chatcmpl_pure_r1","object":"chat.completion.chunk","created":1773896263,"model":"deepseek-r1","choices":[{"index":0,"delta":{},"finish_reason":"length"}],"usage":{"prompt_tokens":100,"completion_tokens":64000,"total_tokens":64100}}`,
+		`data: [DONE]`,
+	}
+
+	var param any
+	var incompleteSeen bool
+	var itemDoneSeen bool
+	var reasoningAddedSeen bool
+	var incompleteData gjson.Result
+	for _, line := range chunks {
+		for _, chunk := range ConvertOpenAIChatCompletionsResponseToOpenAIResponses(context.Background(), "deepseek-r1", request, request, []byte(line), &param) {
+			event, data := parseOpenAIResponsesSSEEvent(t, chunk)
+			if event == "response.completed" {
+				t.Fatalf("stream with finish_reason=length was finalized as response.completed: %s", chunk)
+			}
+			if event == "response.output_item.added" && data.Get("item.type").String() == "reasoning" {
+				reasoningAddedSeen = true
+			}
+			if event == "response.output_item.done" && data.Get("item.type").String() == "reasoning" {
+				itemDoneSeen = true
+			}
+			if event == "response.incomplete" {
+				incompleteSeen = true
+				incompleteData = data
+				if got := data.Get("response.status").String(); got != "incomplete" {
+					t.Fatalf("response.status = %q, want incomplete", got)
+				}
+				if got := data.Get("response.incomplete_details.reason").String(); got != "max_output_tokens" {
+					t.Fatalf("response.incomplete_details.reason = %q, want max_output_tokens", got)
+				}
+				if got := data.Get("response.output.0.type").String(); got != "reasoning" {
+					t.Fatalf("response.output.0.type = %q, want reasoning", got)
+				}
+			}
+		}
+	}
+	if !reasoningAddedSeen {
+		t.Fatal("expected response.output_item.added event for reasoning")
+	}
+	if !itemDoneSeen {
+		t.Fatal("expected response.output_item.done event for reasoning")
+	}
+	if !incompleteSeen {
+		t.Fatal("expected response.incomplete event for pure reasoning with finish_reason=length")
+	}
+	if got := incompleteData.Get("response.usage.output_tokens").Int(); got != 64000 {
+		t.Fatalf("expected response.usage.output_tokens=64000, got %d", got)
+	}
+	if got := incompleteData.Get("response.usage.input_tokens").Int(); got != 100 {
+		t.Fatalf("expected response.usage.input_tokens=100, got %d", got)
+	}
+}

@@ -647,7 +647,9 @@ func ConvertOpenAIChatCompletionsResponseToOpenAIResponses(ctx context.Context, 
 			return out
 		}
 		if len(st.MsgItemAdded) == 0 && len(st.FuncItemAdded) == 0 {
-			return out
+			if len(st.Reasonings) == 0 || (st.FinishReason == "" && !st.UsageSeen) {
+				return out
+			}
 		}
 		st.CompletedEmitted = true
 		out = append(out, buildResponsesCompletedEvent(st, requestForNamespace, nextSeq))
