@@ -53,9 +53,9 @@ jobs:
         uses: appleboy/scp-action@v1.0.0
         with:
           host: ${{ secrets.REMOTE_HOST }}
-          username: root
-          password: ${{ secrets.REGISTRY_PASSWORD }}
-          port: 22
+          port: ${{ secrets.REMOTE_PORT }}
+          username: ${{ secrets.REMOTE_USER }}
+          password: ${{ secrets.REMOTE_PASSWORD }}
           source: cli-proxy-api.tar
           target: /usr/local/src/cli-proxy-api
 
@@ -63,9 +63,9 @@ jobs:
         uses: appleboy/ssh-action@v1.0.0
         with:
           host: ${{ secrets.REMOTE_HOST }}
-          username: root
-          password: ${{ secrets.REGISTRY_PASSWORD }}
-          port: 22
+          port: ${{ secrets.REMOTE_PORT }}
+          username: ${{ secrets.REMOTE_USER }}
+          password: ${{ secrets.REMOTE_PASSWORD }}
           script: |
             set -euo pipefail
 

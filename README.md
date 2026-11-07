@@ -326,6 +326,7 @@ This is a tool built with Tauri 2 + Vue 3 for managing multiple OpenAI Codex des
 2026-09-12 21:33:09 fix: [上游超时] 新增上游响应头等待上限配置并默认收紧至90秒
 2026-09-12 21:57:37 chore: [行尾符] 新增 .gitattributes 固化文本文件为 LF
 2026-10-12 00:30:00 fix: [模型下拉] 管理台模型定义下拉回落全局注册模型
+2026-11-07 21:22:00 ci: [部署配置] 部署流水线远端四要素改由仓库级 Secret 提供
 
 ## License
 
