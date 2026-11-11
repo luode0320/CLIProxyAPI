@@ -153,7 +153,5 @@ jobs:
               -v "${OBJECTSTORE_DIR}":/CLIProxyAPI/objectstore \
               -v "${MYSQLSTORE_DIR}":/CLIProxyAPI/mysqlstore \
               -e APP_ENV=docker \
-              -e MYSQL_DSN="root:Ld588588@tcp(127.0.0.1:33060)/cli_proxy_api?charset=utf8mb4&parseTime=true" \
-              -e MYSQL_LOCAL_PATH=/CLIProxyAPI/mysqlstore \
               --name "${CONTAINER}" \
               "${IMAGE}"
